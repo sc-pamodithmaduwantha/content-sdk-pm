@@ -7,6 +7,13 @@ import debug from '../debug';
 import { LayoutServiceData, LayoutServicePageState } from '../layout';
 import { LayoutKind } from './models';
 import { DEFAULT_VARIANT } from '../personalize';
+import {
+  buildDatasourceAccessQuery,
+  chunkDatasourceIds,
+  clearInaccessibleDatasourceFields,
+  collectDatasourceIds,
+  isDatasourceInaccessible,
+} from './datasource-read-access';
 
 /**
  * GraphQL query for fetching editing data.
@@ -133,6 +140,8 @@ export class EditingService {
       },
     };
 
+    await restrictInaccessibleDatasources(this.graphQLClient, layoutData, language, fetchOptions);
+
     return {
       layoutData,
     };
@@ -152,3 +161,72 @@ export class EditingService {
     });
   }
 }
+
+/**
+ * `item.rendered` in edit mode still serializes datasource field values even when the
+ * current Pages user is denied Read. Recheck each datasource as that user (no sc_editMode)
+ * and clear fields the user cannot read.
+ * @param {GraphQLClient} graphQLClient GraphQL client used for the access check
+ * @param {LayoutServiceData} layoutData editing layout data
+ * @param {string} language item language
+ * @param {FetchOptions} [fetchOptions] caller fetch options (must include Authorization)
+ */
+const restrictInaccessibleDatasources = async (
+  graphQLClient: GraphQLClient,
+  layoutData: LayoutServiceData,
+  language: string,
+  fetchOptions?: FetchOptions
+): Promise<void> => {
+  const authorization = fetchOptions?.headers?.Authorization || fetchOptions?.headers?.authorization;
+  if (!authorization || !layoutData.sitecore.route) {
+    debug.editing(
+      'skipping datasource read-access check (authorization present: %s)',
+      Boolean(authorization)
+    );
+    return;
+  }
+
+  const datasourceIds = collectDatasourceIds(layoutData);
+  if (!datasourceIds.length) {
+    return;
+  }
+
+  const inaccessibleIds = new Set<string>();
+
+  try {
+    for (const batch of chunkDatasourceIds(datasourceIds)) {
+      const { query: accessQuery, variables, aliases } = buildDatasourceAccessQuery(batch);
+      const result = await graphQLClient.request<
+        Record<string, { id?: string; rendered?: { sitecore?: { route?: unknown } } } | null>
+      >(
+        accessQuery,
+        { language, ...variables },
+        {
+          ...fetchOptions,
+          headers: {
+            ...fetchOptions?.headers,
+            // Same identity as the page preview check: user token + edit-mode layout security
+            sc_editMode: 'true',
+          },
+        }
+      );
+
+      aliases.forEach((alias, index) => {
+        if (isDatasourceInaccessible(result?.[alias])) {
+          inaccessibleIds.add(batch[index]);
+        }
+      });
+    }
+  } catch (error) {
+    debug.editing('failed to verify datasource read access: %o', error);
+    return;
+  }
+
+  if (inaccessibleIds.size) {
+    debug.editing(
+      'clearing fields for %d datasource(s) the current user cannot read',
+      inaccessibleIds.size
+    );
+    clearInaccessibleDatasourceFields(layoutData, inaccessibleIds);
+  }
+};

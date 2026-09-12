@@ -23,6 +23,7 @@ import {
   getRequiredEditingParamsList,
   getQueryParamsForPropagation,
   getHeadersForPropagation,
+  getEditingFetchOptions,
   getEditingRequestHtml,
   isDesignLibraryPreviewData,
   resolveServerUrl,
@@ -889,6 +890,80 @@ describe('editing/utils', () => {
 
       // Should not match due to case sensitivity
       expect(result).to.deep.equal({});
+    });
+  });
+
+  describe('getEditingFetchOptions', () => {
+    it('should return empty options when headers are omitted', () => {
+      expect(getEditingFetchOptions()).to.deep.equal({});
+    });
+
+    it('should read Authorization from IncomingHttpHeaders', () => {
+      const result = getEditingFetchOptions({
+        authorization: 'Bearer token123',
+      });
+
+      expect(result).to.deep.equal({
+        headers: {
+          Authorization: 'Bearer token123',
+        },
+      });
+    });
+
+    it('should read Authorization from a Headers object', () => {
+      const headers = new Headers();
+      headers.set('authorization', 'Bearer token123');
+
+      expect(getEditingFetchOptions(headers)).to.deep.equal({
+        headers: {
+          Authorization: 'Bearer token123',
+        },
+      });
+    });
+
+    it('should use the first value when IncomingHttpHeaders authorization is an array', () => {
+      const result = getEditingFetchOptions({
+        authorization: ['Bearer first', 'Bearer second'],
+      });
+
+      expect(result).to.deep.equal({
+        headers: {
+          Authorization: 'Bearer first',
+        },
+      });
+    });
+
+    it('should fall back to the sc_preview_token cookie', () => {
+      const result = getEditingFetchOptions({
+        cookie: 'session=abc; sc_preview_token=Bearer%20cookie-token; other=1',
+      });
+
+      expect(result).to.deep.equal({
+        headers: {
+          Authorization: 'Bearer cookie-token',
+        },
+      });
+    });
+
+    it('should prefer the Authorization header over the preview token cookie', () => {
+      const result = getEditingFetchOptions({
+        authorization: 'Bearer header-token',
+        cookie: 'sc_preview_token=Bearer cookie-token',
+      });
+
+      expect(result).to.deep.equal({
+        headers: {
+          Authorization: 'Bearer header-token',
+        },
+      });
+    });
+
+    it('should return empty options when neither Authorization nor preview token is present', () => {
+      expect(
+        getEditingFetchOptions({
+          cookie: 'session=abc123',
+        })
+      ).to.deep.equal({});
     });
   });
 

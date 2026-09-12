@@ -1,7 +1,7 @@
-import { isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
+import { getEditingFetchOptions, isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
 import { setCachedPageParams, getPageMetadata } from '@sitecore-content-sdk/nextjs';
 import { notFound } from 'next/navigation';
-import { draftMode } from 'next/headers';
+import { draftMode, headers as nextHeaders } from 'next/headers';
 import { Metadata } from 'next';
 <% if (prerender === 'SSG') { -%>
 import { SiteInfo } from '@sitecore-content-sdk/nextjs';
@@ -22,6 +22,16 @@ type PageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
+const getEditingPage = async (editingParams: { [key: string]: string | string[] | undefined }) => {
+  const editingFetchOptions = getEditingFetchOptions(await nextHeaders());
+
+  if (isDesignLibraryPreviewData(editingParams)) {
+    return client.getDesignLibraryData(editingParams, editingFetchOptions);
+  }
+
+  return client.getPreview(editingParams, editingFetchOptions);
+};
+
 export default async function Page({ params, searchParams }: PageProps) {
   const { site, locale, path } = await params;
 
@@ -39,12 +49,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 
   let page;
   if (draft.isEnabled) {
-    const editingParams = await searchParams;
-    if (isDesignLibraryPreviewData(editingParams)) {
-      page = await client.getDesignLibraryData(editingParams);
-    } else {
-      page = await client.getPreview(editingParams);
-    }
+    page = await getEditingPage(await searchParams);
   } else {
     page = await getSitecorePage({ site, locale, path: path ?? [] });
   }
@@ -95,12 +100,7 @@ export const generateMetadata = async ({ params, searchParams }: PageProps): Pro
 
   let page;
   if (draft.isEnabled) {
-    const editingParams = await searchParams;
-    if (isDesignLibraryPreviewData(editingParams)) {
-      page = await client.getDesignLibraryData(editingParams);
-    } else {
-      page = await client.getPreview(editingParams);
-    }
+    page = await getEditingPage(await searchParams);
   } else {
     page = await getSitecorePage({ site, locale, path: path ?? [] });
   }

@@ -18,6 +18,7 @@ import {
 import { IncomingHttpHeaders } from 'http';
 import { SERVER_PROPS_ID, STATIC_PROPS_ID } from 'next/constants';
 import { NativeDataFetcher } from '@sitecore-content-sdk/core';
+import { FetchOptions } from '@sitecore-content-sdk/content/client';
 import { getAllowedOriginsFromEnv } from '@sitecore-content-sdk/core/tools';
 import { AllowedQueryParams, GetAllowedQueryParamsResult } from './types';
 
@@ -215,6 +216,85 @@ export const getHeadersForPropagation = (
   }, {} as Record<string, string>);
 
   return filteredHeaders;
+};
+
+/**
+ * Reads a header value from either a Fetch Headers object or Node IncomingHttpHeaders.
+ * @param {IncomingHttpHeaders | Headers} headers incoming request headers
+ * @param {string} name header name
+ * @returns {string | undefined} header value when present
+ */
+const getRequestHeaderValue = (
+  headers: IncomingHttpHeaders | Headers,
+  name: string
+): string | undefined => {
+  const value = (headers as Headers).get
+    ? (headers as Headers).get(name)
+    : (headers as IncomingHttpHeaders)[name];
+
+  if (!value) {
+    return undefined;
+  }
+
+  return Array.isArray(value) ? value[0] : value;
+};
+
+/**
+ * Reads a cookie value from a Cookie header string or array.
+ * @param {string | string[] | undefined} cookieHeader Cookie header value
+ * @param {string} name cookie name
+ * @returns {string | undefined} cookie value when present
+ */
+const getCookieValue = (
+  cookieHeader: string | string[] | undefined,
+  name: string
+): string | undefined => {
+  if (!cookieHeader) {
+    return undefined;
+  }
+
+  const cookie = Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader;
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const rawValue = match[1].trim().replace(/^"|"$/g, '');
+  try {
+    return decodeURIComponent(rawValue);
+  } catch {
+    return rawValue;
+  }
+};
+
+/**
+ * Builds GraphQL fetch options that carry the Pages editor identity.
+ * Preview layout is otherwise fetched as the API key / Edge identity, so datasource
+ * field values remain visible even when the current user has been denied Read.
+ * Reads `Authorization` from the incoming request, then falls back to the
+ * `sc_preview_token` cookie set by editing render / PreviewProxy.
+ * @param {IncomingHttpHeaders | Headers} [headers] incoming request headers
+ * @returns {FetchOptions} fetch options with Authorization when a token is present
+ * @public
+ */
+export const getEditingFetchOptions = (headers?: IncomingHttpHeaders | Headers): FetchOptions => {
+  if (!headers) {
+    return {};
+  }
+
+  const authorization =
+    getRequestHeaderValue(headers, 'authorization') ||
+    getCookieValue(getRequestHeaderValue(headers, 'cookie'), PREVIEW_COOKIES.PREVIEW_TOKEN);
+
+  if (!authorization) {
+    return {};
+  }
+
+  return {
+    headers: {
+      Authorization: authorization,
+    },
+  };
 };
 
 /**

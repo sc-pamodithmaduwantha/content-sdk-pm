@@ -1,4 +1,4 @@
-import { isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
+import { getEditingFetchOptions, isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
 import { notFound } from 'next/navigation';
 import { draftMode, headers as nextHeaders } from 'next/headers';
 import { Metadata } from 'next';
@@ -32,11 +32,12 @@ export default async function Page({ params }: PageProps) {
   if (draft.isEnabled) {
     const headers = await nextHeaders();
     const previewData = client.getPreviewData(headers);
+    const editingFetchOptions = getEditingFetchOptions(headers);
 
     if (isDesignLibraryPreviewData(previewData)) {
-      page = await client.getDesignLibraryData(previewData);
+      page = await client.getDesignLibraryData(previewData, editingFetchOptions);
     } else {
-      page = await client.getPreview(previewData);
+      page = await client.getPreview(previewData, editingFetchOptions);
     }
   } else {
     page = await client.getPage(path ?? [], { site, locale });

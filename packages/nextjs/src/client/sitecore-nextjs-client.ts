@@ -27,6 +27,42 @@ import { ComponentMap } from '@sitecore-content-sdk/react';
 import { StaticParams } from './models';
 import { SitecoreConfig } from '../config';
 import { EDITING_PARAMS_HEADER } from '../editing/constants';
+import { getEditingFetchOptions } from '../editing/utils';
+
+/**
+ * Forwards the Pages editor user identity to Preview GraphQL requests.
+ * Without this, layout data is fetched as the API-key identity and datasource
+ * field values remain visible even when the current user has been denied Read.
+ * @param {FetchOptions} [fetchOptions] caller-provided fetch options
+ * @returns {Promise<FetchOptions | undefined>} fetch options including Authorization when available
+ */
+const withEditingUserHeaders = async (
+  fetchOptions?: FetchOptions
+): Promise<FetchOptions | undefined> => {
+  if (fetchOptions?.headers?.Authorization || fetchOptions?.headers?.authorization) {
+    return fetchOptions;
+  }
+
+  try {
+    // App Router request scope only. Pages Router getStaticProps cannot use next/headers.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { headers } = require('next/headers') as typeof import('next/headers');
+    const editingOptions = getEditingFetchOptions(await headers());
+    if (!editingOptions.headers?.Authorization) {
+      return fetchOptions;
+    }
+
+    return {
+      ...fetchOptions,
+      headers: {
+        ...fetchOptions?.headers,
+        ...editingOptions.headers,
+      },
+    };
+  } catch {
+    return fetchOptions;
+  }
+};
 
 /**
  * Init options for Sitecore Client that allows you to override services too
@@ -102,7 +138,7 @@ export class SitecoreNextjsClient extends SitecoreClient {
   ): Promise<Page> {
     return super.getDesignLibraryData(
       designLibData as DesignLibraryRenderPreviewData,
-      fetchOptions
+      await withEditingUserHeaders(fetchOptions)
     );
   }
 
@@ -112,7 +148,10 @@ export class SitecoreNextjsClient extends SitecoreClient {
    * @param {FetchOptions} [fetchOptions] Additional fetch fetch options to override GraphQL requests (like retries and fetch)
    */
   async getPreview(previewData: PreviewData, fetchOptions?: FetchOptions): Promise<Page | null> {
-    return super.getPreview(previewData as EditingPreviewData, fetchOptions);
+    return super.getPreview(
+      previewData as EditingPreviewData,
+      await withEditingUserHeaders(fetchOptions)
+    );
   }
 
   /**

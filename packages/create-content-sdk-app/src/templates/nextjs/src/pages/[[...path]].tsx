@@ -16,7 +16,7 @@ import {
   <% } -%>
 } from '@sitecore-content-sdk/nextjs';
 import { extractPath, handleEditorFastRefresh } from '@sitecore-content-sdk/nextjs/utils';
-import { isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
+import { getEditingFetchOptions, isDesignLibraryPreviewData } from '@sitecore-content-sdk/nextjs/editing';
 import components from '.sitecore/component-map';
 import client from 'lib/sitecore-client';
 import Providers from 'src/Providers';
@@ -86,11 +86,13 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   const path = extractPath(context);
   let page;
 
+  const editingFetchOptions = getEditingFetchOptions(context.req?.headers);
+
   if (context.preview && isDesignLibraryPreviewData(context.previewData)) {
-    page = await client.getDesignLibraryData(context.previewData);
+    page = await client.getDesignLibraryData(context.previewData, editingFetchOptions);
   } else {
     page = context.preview
-      ? await client.getPreview(context.previewData)
+      ? await client.getPreview(context.previewData, editingFetchOptions)
       : await client.getPage(path, { locale: context.locale });
   }
   if (page) {

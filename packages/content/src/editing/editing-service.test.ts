@@ -535,4 +535,62 @@ describe('EditingService', () => {
 
     expect(requestOptions.headers.sc_variant).to.equal('default');
   });
+
+  it('should clear datasource fields the current user cannot read', async () => {
+    const requestMock = sinon.stub();
+    requestMock.onFirstCall().resolves({
+      item: {
+        rendered: {
+          sitecore: {
+            context: { pageEditing: true, language: 'en' },
+            route: {
+              name: 'home',
+              placeholders: {
+                main: [
+                  {
+                    componentName: 'RichText',
+                    dataSource: '/sitecore/content/site/Data/Secret',
+                    isContentResolved: true,
+                    fields: {
+                      Text: { value: 'secret copy', metadata: { fieldId: 'text' } },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+    requestMock.onSecondCall().resolves({
+      ds0: null,
+    });
+
+    sinon.stub(GraphQLRequestClient.prototype, 'request').callsFake(requestMock);
+
+    const service = new EditingService({ clientFactory });
+    const result = await service.fetchEditingData(
+      {
+        itemId: 'item-123',
+        language: 'en',
+        version: '1',
+        layoutKind: LayoutKind.Final,
+        mode: LayoutServicePageState.Edit,
+        variantId: 'variant-1',
+      },
+      { headers: { Authorization: 'Bearer editor-token' } }
+    );
+
+    expect(requestMock.calledTwice).to.be.true;
+    expect(requestMock.secondCall.args[0]).to.include('DatasourceAccess');
+    expect(requestMock.secondCall.args[2].headers.Authorization).to.equal('Bearer editor-token');
+    expect(requestMock.secondCall.args[2].headers.sc_editMode).to.equal('true');
+
+    const rendering = result.layoutData.sitecore.route?.placeholders.main[0];
+    expect(rendering?.isContentResolved).to.equal(false);
+    expect((rendering?.fields?.Text as { value: string }).value).to.equal('');
+    expect((rendering?.fields?.Text as { metadata?: { fieldId: string } }).metadata?.fieldId).to.equal(
+      'text'
+    );
+  });
 });

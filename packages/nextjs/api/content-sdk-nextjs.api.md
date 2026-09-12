@@ -636,6 +636,9 @@ export { getDesignLibraryStylesheetLinks }
 
 export { getEdgeProxyContentUrl }
 
+// @public
+export const getEditingFetchOptions: (headers?: IncomingHttpHeaders | Headers) => FetchOptions;
+
 export { getFieldValue }
 
 export { getGroomedVariantIds }
